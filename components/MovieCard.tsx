@@ -2,12 +2,13 @@ import { Image, Text, TouchableOpacity, View } from "react-native";
 import { Link } from "expo-router";
 import { icons } from "@/constants/icons";
 import { getImageUrl } from "@/services/api";
+import { formatRating, formatYear } from "@/utils/format";
 
 /** Poster card used in the Home "Latest" grid and in Search results. */
 export default function MovieCard({ movie }: MovieCardProps) {
   const poster = getImageUrl(movie.poster_path, "w342");
-  const year = movie.release_date?.split("-")[0];
-  const rating = movie.vote_average ? movie.vote_average.toFixed(1) : "N/A";
+  const year = formatYear(movie.release_date);
+  const rating = formatRating(movie.vote_average);
 
   return (
     <Link

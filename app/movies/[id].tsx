@@ -14,13 +14,7 @@ import { fetchMovieDetails, getImageUrl } from "@/services/api";
 import { useFetch } from "@/hooks/useFetch";
 import { useSavedMovies } from "@/hooks/useSavedMovies";
 import ErrorState from "@/components/ErrorState";
-
-function formatRuntime(minutes: number | null) {
-  if (!minutes) return null;
-  const h = Math.floor(minutes / 60);
-  const m = minutes % 60;
-  return h > 0 ? `${h}h ${m}m` : `${m}m`;
-}
+import { formatRuntime, formatYear } from "@/utils/format";
 
 export default function MovieDetails() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -49,8 +43,8 @@ export default function MovieDetails() {
   };
 
   const poster = getImageUrl(movie?.poster_path, "w780");
-  const year = movie?.release_date?.split("-")[0];
-  const runtime = formatRuntime(movie?.runtime ?? null);
+  const year = formatYear(movie?.release_date);
+  const runtime = formatRuntime(movie?.runtime);
   const rating = movie?.vote_average ? movie.vote_average.toFixed(1) : null;
 
   return (
