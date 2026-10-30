@@ -1,9 +1,23 @@
 import { useMemo, useState } from "react";
-import { View, Text, FlatList, ActivityIndicator, TouchableOpacity } from "react-native";
+import {
+  View,
+  Text,
+  FlatList,
+  ActivityIndicator,
+  TouchableOpacity,
+  RefreshControl,
+  Share,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams } from "expo-router";
 import { icons } from "@/constants/icons";
-import { buildFilmography, fetchPerson, getImageUrl } from "@/services/api";
+import {
+  buildFilmography,
+  buildPersonLinks,
+  fetchPerson,
+  getImageUrlForSetting,
+  getPersonUrl,
+} from "@/services/api";
 import { useFetch } from "@/hooks/useFetch";
 import { ageOn, formatDate, todayYmd, truncate } from "@/utils/format";
 import ScreenHeader from "@/components/ScreenHeader";
@@ -11,17 +25,23 @@ import ErrorState from "@/components/ErrorState";
 import Poster from "@/components/Poster";
 import MovieCard from "@/components/MovieCard";
 import SectionHeader from "@/components/SectionHeader";
+import LinkRow from "@/components/LinkRow";
 
 const BIO_PREVIEW_LENGTH = 320;
 
 export default function PersonScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { data: person, loading, error, refetch } = useFetch(() => fetchPerson(id));
+  const person$ = useFetch(({ force }) => fetchPerson(id, { force }));
+  const { data: person, loading, error, refetch, refresh, refreshing } = person$;
   const [bioExpanded, setBioExpanded] = useState(false);
 
   const films = useMemo(() => buildFilmography(person?.movie_credits), [person]);
+  const links = useMemo(
+    () => buildPersonLinks(person?.external_ids, person?.homepage),
+    [person],
+  );
 
-  const photo = getImageUrl(person?.profile_path, "h632");
+  const photo = getImageUrlForSetting(person?.profile_path, "h632");
   const born = formatDate(person?.birthday);
   const died = formatDate(person?.deathday);
   const age = ageOn(person?.birthday, person?.deathday ?? todayYmd());
@@ -29,10 +49,25 @@ export default function PersonScreen() {
   const bioIsLong = bio.length > BIO_PREVIEW_LENGTH;
   const bioText = bioExpanded || !bioIsLong ? bio : truncate(bio, BIO_PREVIEW_LENGTH);
 
+  const onShare = () => {
+    if (!person) return;
+    const url = getPersonUrl(person.id);
+    Share.share({ message: `${person.name} ${url}`, url, title: person.name }).catch(() => {});
+  };
+
   return (
     <View className="flex-1 bg-primary">
       <SafeAreaView className="flex-1">
-        <ScreenHeader title={person?.name ?? "Person"} />
+        <ScreenHeader
+          title={person?.name ?? "Person"}
+          right={
+            person ? (
+              <TouchableOpacity onPress={onShare} accessibilityRole="button" hitSlop={8}>
+                <Text className="text-accent font-semibold">Share</Text>
+              </TouchableOpacity>
+            ) : null
+          }
+        />
 
         <FlatList
           className="px-5"
@@ -43,6 +78,9 @@ export default function PersonScreen() {
           columnWrapperStyle={{ justifyContent: "flex-start", gap: 12, marginBottom: 16 }}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={{ paddingBottom: 40 }}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor="#AB8BFF" />
+          }
           ListHeaderComponent={
             error ? (
               <ErrorState message={error.message} onRetry={refetch} />
@@ -81,6 +119,12 @@ export default function PersonScreen() {
                     ) : null}
                   </View>
                 </View>
+
+                {links.length > 0 ? (
+                  <View className="mt-4">
+                    <LinkRow links={links} />
+                  </View>
+                ) : null}
 
                 {bio ? (
                   <View className="mt-6">
