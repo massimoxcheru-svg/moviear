@@ -2,13 +2,13 @@ interface Movie {
   id: number;
   title: string;
   adult: boolean;
-  backdrop_path: string;
+  backdrop_path: string | null;
   genre_ids: number[];
   original_language: string;
   original_title: string;
   overview: string;
   popularity: number;
-  poster_path: string;
+  poster_path: string | null;
   release_date: string;
   video: boolean;
   vote_average: number;
@@ -61,6 +61,9 @@ interface MovieDetails {
   video: boolean;
   vote_average: number;
   vote_count: number;
+  /** Present when requested with append_to_response=credits,videos. */
+  credits?: Credits;
+  videos?: { results: Video[] };
 }
 
 /** Shape of TMDB list endpoints (trending, search, now_playing, ...). */
@@ -88,4 +91,77 @@ interface MovieCardProps {
 interface SavedMovie extends MovieCardMovie {
   /** Unix ms timestamp; used to sort newest-saved first. */
   saved_at: number;
+}
+
+interface Genre {
+  id: number;
+  name: string;
+}
+
+interface CastMember {
+  id: number;
+  name: string;
+  character: string;
+  profile_path: string | null;
+  /** Billing order, 0 first. */
+  order: number;
+  known_for_department: string;
+}
+
+interface CrewMember {
+  id: number;
+  name: string;
+  job: string;
+  department: string;
+  profile_path: string | null;
+}
+
+interface Credits {
+  cast: CastMember[];
+  crew: CrewMember[];
+}
+
+interface Video {
+  id: string;
+  /** Site specific id; for YouTube this is the watch?v= value. */
+  key: string;
+  name: string;
+  site: string;
+  type: string;
+  official: boolean;
+  published_at: string;
+}
+
+interface Person {
+  id: number;
+  name: string;
+  biography: string;
+  birthday: string | null;
+  deathday: string | null;
+  place_of_birth: string | null;
+  profile_path: string | null;
+  known_for_department: string;
+  popularity: number;
+  also_known_as: string[];
+  homepage: string | null;
+}
+
+interface PersonMovieCredit extends Movie {
+  credit_id: string;
+  character?: string;
+  job?: string;
+  department?: string;
+}
+
+interface PersonWithCredits extends Person {
+  movie_credits: {
+    cast: PersonMovieCredit[];
+    crew: PersonMovieCredit[];
+  };
+}
+
+/** A recently viewed movie persisted on the device. */
+interface HistoryEntry extends MovieCardMovie {
+  /** Unix ms timestamp of the most recent view. */
+  viewed_at: number;
 }
