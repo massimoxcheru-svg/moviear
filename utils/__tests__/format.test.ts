@@ -4,6 +4,7 @@ import {
   formatDate,
   formatMoney,
   formatRating,
+  formatRelativeTime,
   formatRuntime,
   formatYear,
   joinNames,
@@ -130,5 +131,34 @@ describe("joinNames", () => {
   });
   it("handles an empty list", () => {
     expect(joinNames([])).toBe("");
+  });
+});
+
+describe("formatRelativeTime", () => {
+  const now = Date.UTC(2024, 5, 15, 12, 0, 0);
+  const ago = (ms: number) => formatRelativeTime(now - ms, now);
+  const MIN = 60_000;
+  const HOUR = 60 * MIN;
+  const DAY = 24 * HOUR;
+
+  it("steps through the units", () => {
+    expect(ago(0)).toBe("just now");
+    expect(ago(59_000)).toBe("just now");
+    expect(ago(MIN)).toBe("1 minute ago");
+    expect(ago(5 * MIN)).toBe("5 minutes ago");
+    expect(ago(HOUR)).toBe("1 hour ago");
+    expect(ago(23 * HOUR)).toBe("23 hours ago");
+    expect(ago(DAY)).toBe("yesterday");
+    expect(ago(3 * DAY)).toBe("3 days ago");
+    expect(ago(7 * DAY)).toBe("1 week ago");
+    expect(ago(20 * DAY)).toBe("2 weeks ago");
+  });
+
+  it("falls back to a date after about a month", () => {
+    expect(ago(40 * DAY)).toMatch(/^\d{1,2} \w+ 2024$/);
+  });
+
+  it("never reports the future as negative", () => {
+    expect(formatRelativeTime(now + 10 * MIN, now)).toBe("just now");
   });
 });
