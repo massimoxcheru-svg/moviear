@@ -1,8 +1,9 @@
-import { View, Text, Image, FlatList, ActivityIndicator } from "react-native";
+import { View, Text, FlatList, ActivityIndicator } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { icons } from "@/constants/icons";
 import { useSavedMovies } from "@/hooks/useSavedMovies";
 import MovieCard from "@/components/MovieCard";
+import EmptyState from "@/components/EmptyState";
 
 export default function Saved() {
   const { movies, count, hydrated } = useSavedMovies();
@@ -25,7 +26,6 @@ export default function Saved() {
           contentContainerStyle={{ paddingBottom: 100 }}
           ListHeaderComponent={
             <View className="mt-5 mb-6">
-              {/* Header */}
               <Text className="text-white text-2xl font-bold">
                 Saved Movies
               </Text>
@@ -38,23 +38,11 @@ export default function Saved() {
           }
           ListEmptyComponent={
             hydrated ? (
-              <View className="flex-1 items-center justify-center mt-20">
-                <View className="bg-dark-100 rounded-full p-6 mb-6">
-                  <Image
-                    source={icons.save}
-                    className="w-16 h-16"
-                    tintColor="#AB8BFF"
-                    resizeMode="contain"
-                  />
-                </View>
-                <Text className="text-white text-xl font-semibold">
-                  No Saved Movies Yet
-                </Text>
-                <Text className="text-light-300 text-center mt-3 px-8">
-                  Browse movies and tap the save icon to add them to your
-                  watchlist
-                </Text>
-              </View>
+              <EmptyState
+                icon={icons.save}
+                title="No Saved Movies Yet"
+                message="Browse movies and tap the save button to add them to your watchlist"
+              />
             ) : (
               <View className="min-h-[200px] items-center justify-center">
                 <ActivityIndicator size="large" color="#AB8BFF" />

@@ -3,35 +3,28 @@ import { Link } from "expo-router";
 import { icons } from "@/constants/icons";
 import { getImageUrl } from "@/services/api";
 import { formatRating, formatYear } from "@/utils/format";
+import Poster from "./Poster";
 
-/** Poster card used in the Home "Latest" grid and in Search results. */
-export default function MovieCard({ movie }: MovieCardProps) {
+interface Props extends MovieCardProps {
+  /** "grid" fills a third of a three column grid; "row" is a fixed width for horizontal lists. */
+  layout?: "grid" | "row";
+}
+
+/** Poster card used in grids (Home, Search, Saved) and horizontal rows. */
+export default function MovieCard({ movie, layout = "grid" }: Props) {
   const poster = getImageUrl(movie.poster_path, "w342");
   const year = formatYear(movie.release_date);
   const rating = formatRating(movie.vote_average);
+  const width = layout === "grid" ? "w-[30%]" : "w-28";
+  const height = layout === "grid" ? "h-52" : "h-40";
 
   return (
     <Link
       href={{ pathname: "/movies/[id]", params: { id: String(movie.id) } }}
       asChild
     >
-      <TouchableOpacity className="w-[30%] mb-1">
-        {poster ? (
-          <Image
-            source={{ uri: poster }}
-            className="w-full h-52 rounded-lg"
-            resizeMode="cover"
-          />
-        ) : (
-          <View className="w-full h-52 rounded-lg bg-dark-100 items-center justify-center">
-            <Image
-              source={icons.play}
-              className="w-8 h-8"
-              tintColor="#AB8BFF"
-              resizeMode="contain"
-            />
-          </View>
-        )}
+      <TouchableOpacity className={`${width} mb-1`} accessibilityRole="link">
+        <Poster uri={poster} className={`w-full ${height} rounded-lg`} />
 
         <Text className="text-white text-sm font-bold mt-2" numberOfLines={1}>
           {movie.title}

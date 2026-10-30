@@ -1,8 +1,8 @@
 import { Image, Text, TouchableOpacity, View } from "react-native";
 import { Link } from "expo-router";
-import { icons } from "@/constants/icons";
 import { images } from "@/constants/images";
 import { getImageUrl } from "@/services/api";
+import Poster from "./Poster";
 
 interface Props {
   movie: Movie;
@@ -18,23 +18,8 @@ export default function TrendingCard({ movie, index }: Props) {
       href={{ pathname: "/movies/[id]", params: { id: String(movie.id) } }}
       asChild
     >
-      <TouchableOpacity className="w-32 relative">
-        {poster ? (
-          <Image
-            source={{ uri: poster }}
-            className="w-32 h-48 rounded-lg"
-            resizeMode="cover"
-          />
-        ) : (
-          <View className="w-32 h-48 rounded-lg bg-dark-100 items-center justify-center">
-            <Image
-              source={icons.play}
-              className="w-8 h-8"
-              tintColor="#AB8BFF"
-              resizeMode="contain"
-            />
-          </View>
-        )}
+      <TouchableOpacity className="w-32 relative" accessibilityRole="link">
+        <Poster uri={poster} className="w-32 h-48 rounded-lg" />
 
         {/* Rank badge */}
         <View className="absolute bottom-9 -left-3 w-12 h-12 items-center justify-center">
