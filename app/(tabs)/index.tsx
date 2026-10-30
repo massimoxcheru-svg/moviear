@@ -1,19 +1,36 @@
+import { useEffect } from "react";
 import { View, Text, Image, FlatList, ActivityIndicator } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { router } from "expo-router";
 import { images } from "@/constants/images";
 import { icons } from "@/constants/icons";
-import { fetchTrendingMovies, fetchLatestMovies } from "@/services/api";
+import { fetchGenres, fetchLatestMovies, fetchTrendingMovies } from "@/services/api";
 import { useFetch } from "@/hooks/useFetch";
 import { usePaginatedFetch } from "@/hooks/usePaginatedFetch";
+import { useSettings } from "@/hooks/useSettings";
 import MovieCard from "@/components/MovieCard";
 import TrendingCard from "@/components/TrendingCard";
 import ErrorState from "@/components/ErrorState";
 import ListFooter from "@/components/ListFooter";
+import SectionHeader from "@/components/SectionHeader";
+import GenreChip from "@/components/GenreChip";
 
 export default function Home() {
-  const trending = useFetch(() => fetchTrendingMovies("day"));
+  const { settings } = useSettings();
+  const { trendingWindow, region, language } = settings;
+
+  // Trending re-runs when the window or language changes; the fetch function
+  // is read through a ref inside useFetch, so the closure is always current.
+  const trending = useFetch(() => fetchTrendingMovies(trendingWindow), false);
+  const refetchTrending = trending.refetch;
+  useEffect(() => {
+    void refetchTrending();
+  }, [trendingWindow, language, refetchTrending]);
+
+  const genres = useFetch(() => fetchGenres());
+
   const latest = usePaginatedFetch((page) => fetchLatestMovies(page), {
-    key: "latest",
+    key: `latest:${region}:${language}`,
   });
 
   const hasLatest = latest.items.length > 0;
@@ -26,7 +43,7 @@ export default function Home() {
         resizeMode="cover"
       />
       {/* The latest grid is the list itself; everything above it is the
-          header, so the screen scrolls as one piece exactly as before. */}
+          header, so the screen scrolls as one piece. */}
       <FlatList
         className="flex-1 px-5"
         data={latest.items}
@@ -61,9 +78,13 @@ export default function Home() {
 
             {/* Trending Section */}
             <View className="mt-8">
-              <Text className="text-white text-lg font-semibold mb-4">
-                Trending today
-              </Text>
+              <SectionHeader
+                title={trendingWindow === "day" ? "Trending today" : "Trending this week"}
+                action={{
+                  label: "Settings",
+                  onPress: () => router.push("/profile"),
+                }}
+              />
 
               {trending.loading ? (
                 <View className="min-h-[200px] items-center justify-center">
@@ -92,11 +113,41 @@ export default function Home() {
               )}
             </View>
 
+            {/* Genres */}
+            <View className="mt-8">
+              <SectionHeader title="Browse by genre" />
+              {genres.error ? (
+                <ErrorState message={genres.error.message} onRetry={genres.refetch} />
+              ) : (
+                <FlatList
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  data={genres.data ?? []}
+                  keyExtractor={(item) => item.id.toString()}
+                  renderItem={({ item }) => (
+                    <GenreChip
+                      label={item.name}
+                      onPress={() =>
+                        router.push({
+                          pathname: "/genres/[id]",
+                          params: { id: String(item.id), name: item.name },
+                        })
+                      }
+                    />
+                  )}
+                  ItemSeparatorComponent={() => <View className="w-2" />}
+                  ListEmptyComponent={
+                    genres.loading ? (
+                      <ActivityIndicator size="small" color="#AB8BFF" />
+                    ) : null
+                  }
+                />
+              )}
+            </View>
+
             {/* Latest Movies title + page-1 states; the grid follows as list rows */}
             <View className="mt-8">
-              <Text className="text-white text-lg font-semibold mb-4">
-                Now playing
-              </Text>
+              <SectionHeader title="Now playing" />
 
               {latest.loading ? (
                 <View className="min-h-[150px] items-center justify-center">

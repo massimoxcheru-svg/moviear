@@ -15,8 +15,12 @@ export function useSettings() {
     getSnapshot,
   );
 
-  const update = useCallback((patch: Partial<Settings>) => updateSettings(patch), []);
-  const reset = useCallback(() => resetSettings(), []);
+  const update = useCallback((patch: Partial<Settings>) => {
+    updateSettings(patch);
+  }, []);
+  const reset = useCallback(() => {
+    resetSettings();
+  }, []);
 
   return { settings, hydrated, update, reset };
 }
