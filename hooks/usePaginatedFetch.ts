@@ -3,6 +3,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 /** TMDB refuses pages beyond 500 regardless of total_pages. */
 const TMDB_MAX_PAGE = 500;
 
+export interface PageFnOptions {
+  /** True when the user asked for fresh data (pull to refresh). */
+  force: boolean;
+}
+
 export interface UsePaginatedFetchOptions {
   /**
    * Identifies the list (e.g. the search query). Must be a primitive; when it
@@ -29,6 +34,11 @@ export interface UsePaginatedFetchResult<T> {
   loadMore: () => void;
   /** Re-run the request that failed (page 1 or the next page). */
   retry: () => void;
+  /**
+   * Start over from page 1 with `force: true`, keeping the current items on
+   * screen until the new first page arrives. For pull to refresh.
+   */
+  reload: () => Promise<void>;
 }
 
 function toError(err: unknown): Error {
@@ -36,11 +46,11 @@ function toError(err: unknown): Error {
 }
 
 /** Append `next` to `prev`, skipping ids already present. */
-export function mergeUniqueById<T extends { id: number }>(
+export function mergeUniqueById<T extends { id: number | string }>(
   prev: readonly T[],
   next: readonly T[],
 ): T[] {
-  const seen = new Set(prev.map((item) => item.id));
+  const seen = new Set<number | string>(prev.map((item) => item.id));
   const out = [...prev];
   for (const item of next) {
     if (!seen.has(item.id)) {
@@ -60,9 +70,11 @@ export function mergeUniqueById<T extends { id: number }>(
  * slow page from a previous query can never be mixed into the current list.
  *
  * `fetchPage` is read through a ref, so callers can pass an inline closure.
+ * On a reload it is called with `{ force: true }` as a second argument;
+ * otherwise it is called with the page number only.
  */
-export function usePaginatedFetch<T extends { id: number }>(
-  fetchPage: (page: number) => Promise<TMDBPaginatedResponse<T>>,
+export function usePaginatedFetch<T extends { id: number | string }>(
+  fetchPage: (page: number, options?: PageFnOptions) => Promise<TMDBPaginatedResponse<T>>,
   { key, enabled = true }: UsePaginatedFetchOptions,
 ): UsePaginatedFetchResult<T> {
   const [items, setItems] = useState<T[]>([]);
@@ -91,37 +103,42 @@ export function usePaginatedFetch<T extends { id: number }>(
     };
   }, []);
 
-  const load = useCallback(async (pageToLoad: number, generation: number) => {
-    inFlightRef.current = true;
-    if (pageToLoad === 1) setLoading(true);
-    else setLoadingMore(true);
-    setError(null);
-
-    const isCurrent = () =>
-      mountedRef.current && generation === generationRef.current;
-
-    try {
-      const response = await fetchPageRef.current(pageToLoad);
-      if (!isCurrent()) return;
-
-      pageRef.current = pageToLoad;
-      totalPagesRef.current = Math.min(response.total_pages, TMDB_MAX_PAGE);
-      setPage(pageToLoad);
-      setTotalPages(totalPagesRef.current);
-      setItems((prev) =>
-        mergeUniqueById(pageToLoad === 1 ? [] : prev, response.results),
-      );
-    } catch (err) {
-      if (!isCurrent()) return;
-      setError(toError(err));
-    } finally {
-      if (isCurrent()) {
-        inFlightRef.current = false;
-        setLoading(false);
-        setLoadingMore(false);
+  const load = useCallback(
+    async (pageToLoad: number, generation: number, { force = false, silent = false } = {}) => {
+      inFlightRef.current = true;
+      if (pageToLoad === 1) {
+        if (!silent) setLoading(true);
+      } else {
+        setLoadingMore(true);
       }
-    }
-  }, []);
+      setError(null);
+
+      const isCurrent = () => mountedRef.current && generation === generationRef.current;
+
+      try {
+        const response = force
+          ? await fetchPageRef.current(pageToLoad, { force: true })
+          : await fetchPageRef.current(pageToLoad);
+        if (!isCurrent()) return;
+
+        pageRef.current = pageToLoad;
+        totalPagesRef.current = Math.min(response.total_pages, TMDB_MAX_PAGE);
+        setPage(pageToLoad);
+        setTotalPages(totalPagesRef.current);
+        setItems((prev) => mergeUniqueById(pageToLoad === 1 ? [] : prev, response.results));
+      } catch (err) {
+        if (!isCurrent()) return;
+        setError(toError(err));
+      } finally {
+        if (isCurrent()) {
+          inFlightRef.current = false;
+          setLoading(false);
+          setLoadingMore(false);
+        }
+      }
+    },
+    [],
+  );
 
   // Reset and (re)start whenever the key or enabled flag changes.
   useEffect(() => {
@@ -156,6 +173,16 @@ export function usePaginatedFetch<T extends { id: number }>(
     void load(next, generationRef.current);
   }, [enabled, load]);
 
+  const reload = useCallback(async () => {
+    if (!enabled) return;
+    const generation = ++generationRef.current; // drop anything in flight
+    inFlightRef.current = false;
+    pageRef.current = 0;
+    totalPagesRef.current = 0;
+    setLoadingMore(false);
+    await load(1, generation, { force: true, silent: true });
+  }, [enabled, load]);
+
   return {
     items,
     loading,
@@ -164,6 +191,7 @@ export function usePaginatedFetch<T extends { id: number }>(
     hasMore: page > 0 && page < totalPages,
     loadMore,
     retry,
+    reload,
   };
 }
 

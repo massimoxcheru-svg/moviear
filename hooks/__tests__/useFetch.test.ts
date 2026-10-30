@@ -309,3 +309,45 @@ describe("useFetch", () => {
     });
   });
 });
+
+describe("refresh", () => {
+  it("calls fetchFn with force and keeps the data on screen while it runs", async () => {
+    const fetchFn = jest.fn(async ({ force }: { force: boolean }) => (force ? "fresh" : "first"));
+    const { result } = renderHook(() => useFetch(fetchFn));
+    await act(async () => {});
+    expect(result.current.data).toBe("first");
+    expect(fetchFn).toHaveBeenLastCalledWith({ force: false });
+
+    let done: Promise<void> | undefined;
+    act(() => {
+      done = result.current.refresh();
+    });
+    expect(result.current.refreshing).toBe(true);
+    expect(result.current.loading).toBe(false);
+    expect(result.current.data).toBe("first");
+
+    await act(async () => {
+      await done;
+    });
+    expect(result.current.data).toBe("fresh");
+    expect(result.current.refreshing).toBe(false);
+    expect(fetchFn).toHaveBeenLastCalledWith({ force: true });
+  });
+
+  it("reports an error from a refresh without losing the data", async () => {
+    let calls = 0;
+    const fetchFn = jest.fn(async () => {
+      calls += 1;
+      if (calls === 2) throw new Error("offline");
+      return "ok";
+    });
+    const { result } = renderHook(() => useFetch(fetchFn));
+    await act(async () => {});
+    await act(async () => {
+      await result.current.refresh();
+    });
+    expect(result.current.error?.message).toBe("offline");
+    expect(result.current.data).toBe("ok");
+    expect(result.current.refreshing).toBe(false);
+  });
+});

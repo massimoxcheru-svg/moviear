@@ -436,3 +436,68 @@ describe("usePaginatedFetch", () => {
     });
   });
 });
+
+describe("reload", () => {
+  it("fetches page 1 again with force, keeping the old items until it lands", async () => {
+    const { fetchPage, requests } = controllableFetch();
+    const { result } = renderHook(() =>
+      usePaginatedFetch(fetchPage, { key: "k" }),
+    );
+    await act(async () => {
+      requests[0].d.resolve(pageOf(1, [1, 2], 3));
+    });
+    expect(ids(result.current.items)).toEqual([1, 2]);
+
+    let done: Promise<void> | undefined;
+    act(() => {
+      done = result.current.reload();
+    });
+    expect(fetchPage).toHaveBeenLastCalledWith(1, { force: true });
+    expect(result.current.loading).toBe(false);
+    expect(ids(result.current.items)).toEqual([1, 2]);
+
+    await act(async () => {
+      requests[1].d.resolve(pageOf(1, [7], 1, "n"));
+      await done;
+    });
+    expect(ids(result.current.items)).toEqual([7]);
+    expect(result.current.hasMore).toBe(false);
+  });
+
+  it("drops a page that was in flight when the reload started", async () => {
+    const { fetchPage, requests } = controllableFetch();
+    const { result } = renderHook(() =>
+      usePaginatedFetch(fetchPage, { key: "k" }),
+    );
+    await act(async () => {
+      requests[0].d.resolve(pageOf(1, [1], 5));
+    });
+    act(() => {
+      result.current.loadMore();
+    });
+    expect(requests[1].page).toBe(2);
+
+    let done: Promise<void> | undefined;
+    act(() => {
+      done = result.current.reload();
+    });
+    await act(async () => {
+      requests[1].d.resolve(pageOf(2, [2], 5)); // stale page 2
+      requests[2].d.resolve(pageOf(1, [9], 5));
+      await done;
+    });
+    expect(ids(result.current.items)).toEqual([9]);
+    expect(result.current.loadingMore).toBe(false);
+  });
+
+  it("does nothing while disabled", async () => {
+    const { fetchPage } = controllableFetch();
+    const { result } = renderHook(() =>
+      usePaginatedFetch(fetchPage, { key: "k", enabled: false }),
+    );
+    await act(async () => {
+      await result.current.reload();
+    });
+    expect(fetchPage).not.toHaveBeenCalled();
+  });
+});
