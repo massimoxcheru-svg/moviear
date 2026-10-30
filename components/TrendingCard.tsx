@@ -1,7 +1,7 @@
 import { Image, Text, TouchableOpacity, View } from "react-native";
 import { Link } from "expo-router";
 import { images } from "@/constants/images";
-import { getImageUrl } from "@/services/api";
+import { getImageUrlForSetting } from "@/services/api";
 import Poster from "./Poster";
 
 interface Props {
@@ -11,7 +11,7 @@ interface Props {
 
 /** Wider poster card with a rank badge, used in the horizontal trending row. */
 export default function TrendingCard({ movie, index }: Props) {
-  const poster = getImageUrl(movie.poster_path, "w342");
+  const poster = getImageUrlForSetting(movie.poster_path, "w342");
 
   return (
     <Link

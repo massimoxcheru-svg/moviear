@@ -1,7 +1,7 @@
 import { Text, TouchableOpacity } from "react-native";
 import { Link } from "expo-router";
 import { icons } from "@/constants/icons";
-import { getImageUrl } from "@/services/api";
+import { getImageUrlForSetting } from "@/services/api";
 import Poster from "./Poster";
 
 interface Props {
@@ -10,7 +10,7 @@ interface Props {
 
 /** Round headshot with name and character, linking to the person screen. */
 export default function CastCard({ member }: Props) {
-  const photo = getImageUrl(member.profile_path, "w185");
+  const photo = getImageUrlForSetting(member.profile_path, "w185");
 
   return (
     <Link
