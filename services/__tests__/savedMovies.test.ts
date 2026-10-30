@@ -175,6 +175,9 @@ describe("toggling", () => {
       vote_average: 7.5,
       release_date: "2024-01-01",
       saved_at: expect.any(Number),
+      rating: null,
+      note: "",
+      genre_ids: [],
     });
   });
 
@@ -228,7 +231,7 @@ describe("persistence", () => {
     await store.waitForPendingWrites();
 
     expect(readDisk()).toEqual({
-      version: 1,
+      version: 2,
       movies: [
         {
           id: 5,
@@ -237,6 +240,9 @@ describe("persistence", () => {
           vote_average: 7.5,
           release_date: "2024-01-01",
           saved_at: expect.any(Number),
+          rating: null,
+          note: "",
+          genre_ids: [],
         },
       ],
     });
@@ -378,6 +384,9 @@ describe("resilience", () => {
         vote_average: 0,
         release_date: "",
         saved_at: 0,
+        rating: null,
+        note: "",
+        genre_ids: [],
       },
     ]);
   });
@@ -407,5 +416,138 @@ describe("resilience", () => {
     store.toggleSavedMovie(movie(2));
     await store.waitForPendingWrites();
     expect(readDisk().movies.map((m) => m.id)).toEqual([2, 1]);
+  });
+});
+
+describe("ratings and notes", () => {
+  it("rates a saved movie, clamps to whole numbers in range, and clears with null", async () => {
+    const store = launchApp();
+    await store.hydrateSavedMovies();
+    store.saveMovie(movie(1));
+
+    expect(store.rateSavedMovie(1, 7.6)).toBe(true);
+    expect(store.getSavedMovie(1)?.rating).toBe(8);
+    expect(store.rateSavedMovie(1, 11)).toBe(true);
+    expect(store.getSavedMovie(1)?.rating).toBeNull();
+    store.rateSavedMovie(1, 3);
+    store.rateSavedMovie(1, null);
+    expect(store.getSavedMovie(1)?.rating).toBeNull();
+  });
+
+  it("ignores ratings and notes for movies that are not saved", async () => {
+    const store = launchApp();
+    await store.hydrateSavedMovies();
+    expect(store.rateSavedMovie(99, 5)).toBe(false);
+    expect(store.setSavedMovieNote(99, "x")).toBe(false);
+  });
+
+  it("trims and caps notes and persists them", async () => {
+    const store = launchApp();
+    await store.hydrateSavedMovies();
+    store.saveMovie(movie(1));
+    store.setSavedMovieNote(1, "  great  ");
+    expect(store.getSavedMovie(1)?.note).toBe("great");
+    store.setSavedMovieNote(1, "x".repeat(600));
+    expect(store.getSavedMovie(1)?.note).toHaveLength(store.MAX_NOTE_LENGTH);
+
+    await store.waitForPendingWrites();
+    expect(readDisk().version).toBe(2);
+    expect(readDisk().movies[0].note).toHaveLength(store.MAX_NOTE_LENGTH);
+  });
+
+  it("keeps genre ids from the input", async () => {
+    const store = launchApp();
+    await store.hydrateSavedMovies();
+    store.saveMovie({ ...movie(1), genre_ids: [28, 12] });
+    expect(store.getSavedMovie(1)?.genre_ids).toEqual([28, 12]);
+  });
+
+  it("loads a version 1 payload with defaults for the new fields", async () => {
+    mockDisk.set(
+      STORAGE_KEY,
+      JSON.stringify({
+        version: 1,
+        movies: [{ id: 1, title: "Old", poster_path: null, saved_at: 5 }],
+      }),
+    );
+    const store = launchApp();
+    await store.hydrateSavedMovies();
+    expect(store.getSavedMovie(1)).toEqual({
+      id: 1,
+      title: "Old",
+      poster_path: null,
+      vote_average: 0,
+      release_date: "",
+      saved_at: 5,
+      rating: null,
+      note: "",
+      genre_ids: [],
+    });
+  });
+});
+
+describe("importing", () => {
+  const entry = (id: number, saved_at: number, rating: number | null = null): SavedMovie => ({
+    ...movie(id),
+    saved_at,
+    rating,
+    note: "",
+    genre_ids: [],
+  });
+
+  it("merge keeps existing entries and lets imported ones win on conflict", async () => {
+    const store = launchApp();
+    await store.hydrateSavedMovies();
+    store.saveMovie(movie(1));
+    store.rateSavedMovie(1, 4);
+
+    const count = store.importSavedMovies([entry(1, 1, 9), entry(2, 2)], "merge");
+    expect(count).toBe(2);
+    expect(store.getSavedMovie(1)?.rating).toBe(9);
+    expect(store.getSavedMovies().map((m) => m.id)).toEqual([2, 1]);
+  });
+
+  it("replace drops what was there and cleans the input", async () => {
+    const store = launchApp();
+    await store.hydrateSavedMovies();
+    store.saveMovie(movie(1));
+
+    const count = store.importSavedMovies(
+      [entry(5, 10, 99), { id: 6 } as SavedMovie, "junk" as unknown as SavedMovie],
+      "replace",
+    );
+    expect(count).toBe(1);
+    expect(store.getSavedMovie(5)?.rating).toBeNull();
+    expect(store.isMovieSaved(1)).toBe(false);
+  });
+});
+
+describe("viewSavedMovies", () => {
+  const store = launchApp();
+  const base = (id: number, title: string, saved_at: number, extra: Partial<SavedMovie> = {}) =>
+    ({ ...movie(id, title), saved_at, rating: null, note: "", genre_ids: [], ...extra }) as SavedMovie;
+  const list = [
+    base(1, "Zed", 10, { rating: 6, release_date: "2001-01-01" }),
+    base(2, "Alpha", 20, { note: "fun", release_date: "2020-01-01" }),
+    base(3, "Mid", 30, { rating: 9, release_date: "2010-01-01" }),
+  ];
+
+  it("sorts by date saved, title, rating and release", () => {
+    expect(store.viewSavedMovies(list, "saved").map((m) => m.id)).toEqual([3, 2, 1]);
+    expect(store.viewSavedMovies(list, "title").map((m) => m.id)).toEqual([2, 3, 1]);
+    expect(store.viewSavedMovies(list, "rating").map((m) => m.id)).toEqual([3, 1, 2]);
+    expect(store.viewSavedMovies(list, "release").map((m) => m.id)).toEqual([2, 3, 1]);
+  });
+
+  it("filters rated, unrated and noted", () => {
+    expect(store.viewSavedMovies(list, "saved", "rated").map((m) => m.id)).toEqual([3, 1]);
+    expect(store.viewSavedMovies(list, "saved", "unrated").map((m) => m.id)).toEqual([2]);
+    expect(store.viewSavedMovies(list, "saved", "noted").map((m) => m.id)).toEqual([2]);
+  });
+
+  it("does not mutate the input", () => {
+    const copy = [...list];
+    store.viewSavedMovies(list, "title");
+    expect(list).toEqual(copy);
   });
 });
