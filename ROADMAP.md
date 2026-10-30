@@ -20,7 +20,3 @@ Work planned for MovieAr, roughly in order. Each item is a real piece of work I 
 - [ ] Unit tests for the service layer and hooks.
 - [ ] Lint and type checks in CI (GitHub Actions).
 - [ ] First Android build with EAS.
-
-## Known issues
-
-See [docs/CORRECTIONS.md](docs/CORRECTIONS.md) for the current list of build and configuration problems.

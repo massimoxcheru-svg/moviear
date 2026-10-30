@@ -6,7 +6,7 @@ Built for my own use as a lightweight watch list, and as the project I use to le
 
 ## Status
 
-Early development. The tab navigation, theme and screen scaffolding are in place. The TMDB data layer, movie lists, search and saved movies are the next pieces of work. See [ROADMAP.md](ROADMAP.md) for what's planned and [docs/CORRECTIONS.md](docs/CORRECTIONS.md) for known issues.
+Early development. The tab navigation, theme and screen scaffolding are in place. The TMDB data layer, movie lists, search and saved movies are the next pieces of work. See [ROADMAP.md](ROADMAP.md) for what's planned.
 
 ## Built with
 
@@ -51,7 +51,6 @@ hooks/          hooks for loading data
 services/       TMDB API client
 interfaces/     TypeScript types for API data
 assets/         icons, images, fonts
-docs/           my working notes and tutorials
 ```
 
 ## License
