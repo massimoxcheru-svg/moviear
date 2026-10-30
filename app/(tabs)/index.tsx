@@ -1,10 +1,16 @@
-import { useEffect } from "react";
-import { View, Text, Image, FlatList, ActivityIndicator } from "react-native";
+import { useCallback, useEffect, useState } from "react";
+import { View, Text, Image, FlatList, ActivityIndicator, RefreshControl, TouchableOpacity } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { images } from "@/constants/images";
 import { icons } from "@/constants/icons";
-import { fetchGenres, fetchLatestMovies, fetchTrendingMovies } from "@/services/api";
+import {
+  fetchGenres,
+  fetchLatestMovies,
+  fetchMovieList,
+  fetchTrendingMovies,
+  MOVIE_LIST_TITLES,
+} from "@/services/api";
 import { useFetch } from "@/hooks/useFetch";
 import { usePaginatedFetch } from "@/hooks/usePaginatedFetch";
 import { useSettings } from "@/hooks/useSettings";
@@ -14,24 +20,53 @@ import ErrorState from "@/components/ErrorState";
 import ListFooter from "@/components/ListFooter";
 import SectionHeader from "@/components/SectionHeader";
 import GenreChip from "@/components/GenreChip";
+import MovieRow from "@/components/MovieRow";
 
 export default function Home() {
   const { settings } = useSettings();
   const { trendingWindow, region, language } = settings;
+  const [refreshing, setRefreshing] = useState(false);
 
   // Trending re-runs when the window or language changes; the fetch function
   // is read through a ref inside useFetch, so the closure is always current.
-  const trending = useFetch(() => fetchTrendingMovies(trendingWindow), false);
+  const trending = useFetch(({ force }) => fetchTrendingMovies(trendingWindow, { force }), false);
   const refetchTrending = trending.refetch;
   useEffect(() => {
     void refetchTrending();
   }, [trendingWindow, language, refetchTrending]);
 
-  const genres = useFetch(() => fetchGenres());
+  const genres = useFetch(({ force }) => fetchGenres({ force }));
+  const upcoming = useFetch(
+    async ({ force }) => (await fetchMovieList("upcoming", 1, { force })).results,
+  );
+  const topRated = useFetch(
+    async ({ force }) => (await fetchMovieList("top_rated", 1, { force })).results,
+  );
 
-  const latest = usePaginatedFetch((page) => fetchLatestMovies(page), {
-    key: `latest:${region}:${language}`,
-  });
+  const latest = usePaginatedFetch(
+    (page, options) => fetchLatestMovies(page, { force: options?.force }),
+    { key: `latest:${region}:${language}` },
+  );
+
+  // Region and language changes should refresh the regional rows too.
+  const refreshUpcoming = upcoming.refetch;
+  const refreshTopRated = topRated.refetch;
+  useEffect(() => {
+    void refreshUpcoming();
+    void refreshTopRated();
+  }, [region, language, refreshUpcoming, refreshTopRated]);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await Promise.all([
+      trending.refresh(),
+      genres.refresh(),
+      upcoming.refresh(),
+      topRated.refresh(),
+      latest.reload(),
+    ]);
+    setRefreshing(false);
+  }, [trending, genres, upcoming, topRated, latest]);
 
   const hasLatest = latest.items.length > 0;
 
@@ -59,6 +94,9 @@ export default function Home() {
         contentContainerStyle={{ minHeight: "100%", paddingBottom: 100 }}
         onEndReached={latest.loadMore}
         onEndReachedThreshold={0.5}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#AB8BFF" />
+        }
         ListHeaderComponent={
           <SafeAreaView edges={["top"]}>
             {/* Header */}
@@ -67,13 +105,22 @@ export default function Home() {
             </View>
 
             {/* Welcome Section */}
-            <View className="mt-10">
-              <Text className="text-white text-2xl font-bold">
-                Welcome to MovieAr
-              </Text>
-              <Text className="text-light-200 text-base mt-2">
-                Discover trending movies and save your favorites
-              </Text>
+            <View className="mt-10 flex-row items-end justify-between">
+              <View className="flex-1 pr-4">
+                <Text className="text-white text-2xl font-bold">
+                  Welcome to MovieAr
+                </Text>
+                <Text className="text-light-200 text-base mt-2">
+                  Discover trending movies and save your favorites
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => router.push("/discover")}
+                accessibilityRole="link"
+                className="bg-accent rounded-full px-4 py-2"
+              >
+                <Text className="text-primary font-semibold text-sm">Discover</Text>
+              </TouchableOpacity>
             </View>
 
             {/* Trending Section */}
@@ -145,9 +192,50 @@ export default function Home() {
               )}
             </View>
 
+            {/* Coming soon */}
+            <View className="mt-8">
+              <SectionHeader
+                title={MOVIE_LIST_TITLES.upcoming}
+                action={{
+                  label: "See all",
+                  onPress: () => router.push({ pathname: "/lists/[kind]", params: { kind: "upcoming" } }),
+                }}
+              />
+              <MovieRow
+                movies={upcoming.data ?? []}
+                loading={upcoming.loading}
+                error={upcoming.error}
+                onRetry={upcoming.refetch}
+                emptyText="Nothing announced for your region yet"
+              />
+            </View>
+
+            {/* Top rated */}
+            <View className="mt-8">
+              <SectionHeader
+                title={MOVIE_LIST_TITLES.top_rated}
+                action={{
+                  label: "See all",
+                  onPress: () => router.push({ pathname: "/lists/[kind]", params: { kind: "top_rated" } }),
+                }}
+              />
+              <MovieRow
+                movies={topRated.data ?? []}
+                loading={topRated.loading}
+                error={topRated.error}
+                onRetry={topRated.refetch}
+              />
+            </View>
+
             {/* Latest Movies title + page-1 states; the grid follows as list rows */}
             <View className="mt-8">
-              <SectionHeader title="Now playing" />
+              <SectionHeader
+                title={MOVIE_LIST_TITLES.now_playing}
+                action={{
+                  label: "See all",
+                  onPress: () => router.push({ pathname: "/lists/[kind]", params: { kind: "now_playing" } }),
+                }}
+              />
 
               {latest.loading ? (
                 <View className="min-h-[150px] items-center justify-center">
