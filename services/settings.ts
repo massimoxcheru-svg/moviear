@@ -23,6 +23,8 @@ export interface Settings {
   language: string;
   /** Record opened movies in the history list. */
   trackHistory: boolean;
+  /** Request smaller images to save mobile data. */
+  dataSaver: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -30,6 +32,7 @@ export const DEFAULT_SETTINGS: Settings = {
   region: "US",
   language: "en-US",
   trackHistory: true,
+  dataSaver: false,
 };
 
 export const REGIONS: readonly { code: string; name: string }[] = [
@@ -101,6 +104,8 @@ export function sanitizeSettings(input: unknown): Settings {
       typeof v.trackHistory === "boolean"
         ? v.trackHistory
         : DEFAULT_SETTINGS.trackHistory,
+    dataSaver:
+      typeof v.dataSaver === "boolean" ? v.dataSaver : DEFAULT_SETTINGS.dataSaver,
   };
 }
 

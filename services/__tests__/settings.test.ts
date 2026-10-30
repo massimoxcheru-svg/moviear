@@ -202,6 +202,7 @@ describe("sanitizeSettings", () => {
       region: "IN",
       language: "ja-JP",
       trackHistory: false,
+      dataSaver: true,
     };
     expect(store.sanitizeSettings(valid)).toEqual(valid);
   });
