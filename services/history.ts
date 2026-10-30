@@ -156,3 +156,15 @@ export function clearHistory(): void {
   emit({ ...snapshot, entries: [] });
   void persist([]);
 }
+
+/**
+ * Replace or merge the list (restore from a backup). Entries are cleaned
+ * the same way as a disk read; the newest view of a movie wins.
+ */
+export function importHistory(incoming: readonly HistoryEntry[], mode: "merge" | "replace") {
+  const clean = parsePersisted(JSON.stringify({ version: STORAGE_VERSION, entries: incoming }));
+  const entries = normalise(mode === "merge" ? [...snapshot.entries, ...clean] : clean);
+  emit({ ...snapshot, entries });
+  void persist(entries);
+  return entries.length;
+}

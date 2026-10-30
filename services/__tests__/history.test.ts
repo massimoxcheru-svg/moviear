@@ -238,3 +238,32 @@ describe("hydration", () => {
     expect(warnSpy).toHaveBeenCalled();
   });
 });
+
+describe("importing", () => {
+  const entry = (id: number, viewed_at: number): HistoryEntry => ({
+    ...movie(id),
+    viewed_at,
+  });
+
+  it("merge keeps the newest view of each movie and the cap", async () => {
+    const store = launchApp();
+    await store.hydrateHistory();
+    store.recordView(movie(1), 100);
+
+    const count = store.importHistory([entry(1, 50), entry(2, 200)], "merge");
+    expect(count).toBe(2);
+    expect(store.getHistory().map((e) => [e.id, e.viewed_at])).toEqual([
+      [2, 200],
+      [1, 100],
+    ]);
+  });
+
+  it("replace drops the current list and ignores junk", async () => {
+    const store = launchApp();
+    await store.hydrateHistory();
+    store.recordView(movie(1));
+    const count = store.importHistory([entry(9, 1), {} as HistoryEntry], "replace");
+    expect(count).toBe(1);
+    expect(store.getHistory().map((e) => e.id)).toEqual([9]);
+  });
+});
