@@ -61,9 +61,14 @@ interface MovieDetails {
   video: boolean;
   vote_average: number;
   vote_count: number;
-  /** Present when requested with append_to_response=credits,videos. */
+  /** Present when requested through append_to_response (see fetchMovieDetails). */
   credits?: Credits;
   videos?: { results: Video[] };
+  release_dates?: ReleaseDatesResponse;
+  keywords?: { keywords: Keyword[] };
+  images?: MovieImages;
+  external_ids?: ExternalIds;
+  "watch/providers"?: WatchProvidersResponse;
 }
 
 /** Shape of TMDB list endpoints (trending, search, now_playing, ...). */
@@ -91,6 +96,12 @@ interface MovieCardProps {
 interface SavedMovie extends MovieCardMovie {
   /** Unix ms timestamp; used to sort newest-saved first. */
   saved_at: number;
+  /** The user's own score, 1 to 10, or null when not rated. */
+  rating: number | null;
+  /** Free text, empty when none. */
+  note: string;
+  /** TMDB genre ids, for the taste breakdown on Profile. */
+  genre_ids: number[];
 }
 
 interface Genre {
@@ -158,10 +169,107 @@ interface PersonWithCredits extends Person {
     cast: PersonMovieCredit[];
     crew: PersonMovieCredit[];
   };
+  external_ids?: ExternalIds;
 }
 
 /** A recently viewed movie persisted on the device. */
 interface HistoryEntry extends MovieCardMovie {
   /** Unix ms timestamp of the most recent view. */
   viewed_at: number;
+}
+
+interface WatchProvider {
+  provider_id: number;
+  provider_name: string;
+  logo_path: string | null;
+  display_priority: number;
+}
+
+/** One region's entry from /movie/{id}/watch/providers. */
+interface WatchProvidersForRegion {
+  /** TMDB's JustWatch page for this movie and region. */
+  link: string;
+  flatrate?: WatchProvider[];
+  rent?: WatchProvider[];
+  buy?: WatchProvider[];
+  free?: WatchProvider[];
+  ads?: WatchProvider[];
+}
+
+interface WatchProvidersResponse {
+  results: Record<string, WatchProvidersForRegion>;
+}
+
+interface ReleaseDate {
+  certification: string;
+  iso_639_1: string;
+  release_date: string;
+  /** 1 premiere, 2 limited, 3 theatrical, 4 digital, 5 physical, 6 TV. */
+  type: number;
+}
+
+interface ReleaseDatesResponse {
+  results: { iso_3166_1: string; release_dates: ReleaseDate[] }[];
+}
+
+interface Keyword {
+  id: number;
+  name: string;
+}
+
+interface MovieImage {
+  file_path: string;
+  width: number;
+  height: number;
+  aspect_ratio: number;
+  vote_average: number;
+  vote_count: number;
+  iso_639_1: string | null;
+}
+
+interface MovieImages {
+  backdrops: MovieImage[];
+  posters: MovieImage[];
+}
+
+interface ExternalIds {
+  imdb_id: string | null;
+  facebook_id: string | null;
+  instagram_id: string | null;
+  twitter_id: string | null;
+  wikidata_id?: string | null;
+}
+
+interface Collection {
+  id: number;
+  name: string;
+  overview: string;
+  poster_path: string | null;
+  backdrop_path: string | null;
+  parts: Movie[];
+}
+
+/** A person as returned by /search/person. */
+interface PersonSummary {
+  id: number;
+  name: string;
+  profile_path: string | null;
+  known_for_department: string;
+  popularity: number;
+  known_for: Movie[];
+}
+
+interface Review {
+  id: string;
+  author: string;
+  author_details: {
+    name: string;
+    username: string;
+    avatar_path: string | null;
+    rating: number | null;
+  };
+  content: string;
+  created_at: string;
+  updated_at: string;
+  url: string;
 }

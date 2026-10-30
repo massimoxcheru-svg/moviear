@@ -1,21 +1,34 @@
 import {
+  buildExternalLinks,
   buildFilmography,
+  buildPersonLinks,
+  DETAILS_APPEND,
   discoverMovies,
+  fetchCollection,
   fetchGenres,
   fetchLatestMovies,
   fetchMovieDetails,
   fetchMovieList,
+  fetchMovieReviews,
   fetchPerson,
   fetchRecommendedMovies,
   fetchTrendingMovies,
   getImageUrl,
   getYouTubeThumbnail,
+  getMovieUrl,
   getYouTubeUrl,
+  MIN_RATING_MIN_VOTES,
+  pickBackdrops,
+  pickCertification,
   pickDirectors,
+  pickImageSize,
   pickTopCast,
   pickTrailers,
+  pickWatchProviders,
   RATING_SORT_MIN_VOTES,
   searchMovies,
+  searchPeople,
+  sortCollectionParts,
 } from "../api";
 import { clearCache } from "../cache";
 import { resetSettings, updateSettings } from "../settings";
@@ -275,14 +288,32 @@ describe("searchMovies", () => {
 });
 
 describe("fetchMovieDetails", () => {
-  it("requests /movie/{id} with credits and videos appended and returns the body as-is", async () => {
+  it("requests /movie/{id} with everything the screen needs appended and returns the body as-is", async () => {
     const details = { id: 42, title: "Answer", genres: [] };
     fetchMock.mockResolvedValueOnce(jsonResponse(details));
 
     await expect(fetchMovieDetails(42)).resolves.toEqual(details);
     const url = new URL(lastCall().url);
     expect(url.pathname).toBe("/3/movie/42");
-    expect(url.searchParams.get("append_to_response")).toBe("credits,videos");
+    expect(url.searchParams.get("append_to_response")).toBe(DETAILS_APPEND);
+    expect(DETAILS_APPEND.split(",")).toEqual(
+      expect.arrayContaining(["credits", "videos", "release_dates", "watch/providers"]),
+    );
+    expect(url.searchParams.get("include_image_language")).toBe("en,null");
+  });
+
+  it("asks for posters in the chosen language", async () => {
+    updateSettings({ language: "fr-FR" });
+    await fetchMovieDetails(1);
+    expect(new URL(lastCall().url).searchParams.get("include_image_language")).toBe("fr,null");
+  });
+
+  it("force bypasses a fresh cache entry", async () => {
+    await fetchMovieDetails(8);
+    await fetchMovieDetails(8);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await fetchMovieDetails(8, { force: true });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("accepts a string id (as received from the route params)", async () => {
@@ -292,7 +323,7 @@ describe("fetchMovieDetails", () => {
 
   it("forwards an AbortSignal to fetch", async () => {
     const controller = new AbortController();
-    await fetchMovieDetails(1, controller.signal);
+    await fetchMovieDetails(1, { signal: controller.signal });
     expect(lastCall().init.signal).toBe(controller.signal);
   });
 });
@@ -345,6 +376,77 @@ describe("discoverMovies", () => {
     expect(url.searchParams.get("primary_release_date.lte")).toBe("2024-06-01");
     expect(url.searchParams.has("with_genres")).toBe(false);
   });
+
+  it("joins several genres and a keyword", async () => {
+    await discoverMovies({ genreIds: [28, 12], genreId: 16, keywordId: 9715 });
+    const url = new URL(lastCall().url);
+    expect(url.searchParams.get("with_genres")).toBe("28,12,16");
+    expect(url.searchParams.get("with_keywords")).toBe("9715");
+  });
+
+  it("turns year bounds into release date bounds, keeping the earlier upper bound", async () => {
+    await discoverMovies({ yearFrom: 1990, yearTo: 1999 });
+    let url = new URL(lastCall().url);
+    expect(url.searchParams.get("primary_release_date.gte")).toBe("1990-01-01");
+    expect(url.searchParams.get("primary_release_date.lte")).toBe("1999-12-31");
+
+    await discoverMovies({ yearTo: 2030, releasedBefore: "2024-06-01" });
+    url = new URL(lastCall().url);
+    expect(url.searchParams.get("primary_release_date.lte")).toBe("2024-06-01");
+  });
+
+  it("adds a vote floor with a minimum rating, and runtime bounds", async () => {
+    await discoverMovies({ minRating: 7, runtimeMin: 80, runtimeMax: 120 });
+    const url = new URL(lastCall().url);
+    expect(url.searchParams.get("vote_average.gte")).toBe("7");
+    expect(url.searchParams.get("vote_count.gte")).toBe(String(MIN_RATING_MIN_VOTES));
+    expect(url.searchParams.get("with_runtime.gte")).toBe("80");
+    expect(url.searchParams.get("with_runtime.lte")).toBe("120");
+
+    await discoverMovies({ minRating: 0 });
+    expect(new URL(lastCall().url).searchParams.has("vote_average.gte")).toBe(false);
+  });
+
+  it("supports the box office and title sorts", async () => {
+    await discoverMovies({ sort: "revenue" });
+    expect(new URL(lastCall().url).searchParams.get("sort_by")).toBe("revenue.desc");
+    await discoverMovies({ sort: "title" });
+    expect(new URL(lastCall().url).searchParams.get("sort_by")).toBe("title.asc");
+  });
+});
+
+describe("searchPeople", () => {
+  it("searches /search/person and skips blank queries", async () => {
+    await searchPeople(" keanu ", 2);
+    const url = new URL(lastCall().url);
+    expect(url.pathname).toBe("/3/search/person");
+    expect(url.searchParams.get("query")).toBe("keanu");
+    expect(url.searchParams.get("page")).toBe("2");
+
+    fetchMock.mockClear();
+    await expect(searchPeople("  ")).resolves.toMatchObject({ results: [] });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("fetchMovieReviews and fetchCollection", () => {
+  it("pages through reviews without caching", async () => {
+    await fetchMovieReviews(5, 2);
+    const url = new URL(lastCall().url);
+    expect(url.pathname).toBe("/3/movie/5/reviews");
+    expect(url.searchParams.get("page")).toBe("2");
+    await fetchMovieReviews(5, 2);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("caches a collection", async () => {
+    const collection = { id: 10, name: "Series", parts: [] };
+    fetchMock.mockResolvedValueOnce(jsonResponse(collection));
+    await expect(fetchCollection(10)).resolves.toEqual(collection);
+    expect(new URL(lastCall().url).pathname).toBe("/3/collection/10");
+    await fetchCollection(10);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("fetchPerson", () => {
@@ -355,7 +457,7 @@ describe("fetchPerson", () => {
     await expect(fetchPerson(3)).resolves.toEqual(person);
     const url = new URL(lastCall().url);
     expect(url.pathname).toBe("/3/person/3");
-    expect(url.searchParams.get("append_to_response")).toBe("movie_credits");
+    expect(url.searchParams.get("append_to_response")).toBe("movie_credits,external_ids");
 
     await fetchPerson("3");
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -513,5 +615,142 @@ describe("buildFilmography", () => {
     });
     expect(films.map((m) => m.id)).toEqual([2, 4, 1, 5, 3]);
     expect(buildFilmography(undefined)).toEqual([]);
+  });
+});
+
+describe("pickCertification", () => {
+  const release = (
+    iso: string,
+    dates: { certification: string; type: number }[],
+  ): ReleaseDatesResponse["results"][number] => ({
+    iso_3166_1: iso,
+    release_dates: dates.map((d) => ({ ...d, iso_639_1: "", release_date: "" })),
+  });
+
+  it("prefers the region, then the theatrical release", () => {
+    const data: ReleaseDatesResponse = {
+      results: [
+        release("US", [{ certification: "R", type: 3 }]),
+        release("GB", [
+          { certification: "", type: 1 },
+          { certification: "12A", type: 3 },
+          { certification: "12", type: 4 },
+        ]),
+      ],
+    };
+    expect(pickCertification(data, "GB")).toBe("12A");
+    expect(pickCertification(data, "US")).toBe("R");
+  });
+
+  it("falls back to the US, then to any region with one", () => {
+    const data: ReleaseDatesResponse = {
+      results: [
+        release("FR", [{ certification: "", type: 3 }]),
+        release("DE", [{ certification: "FSK 16", type: 2 }]),
+      ],
+    };
+    expect(pickCertification(data, "FR")).toBe("FSK 16");
+    expect(pickCertification({ results: [] }, "US")).toBeNull();
+    expect(pickCertification(undefined, "US")).toBeNull();
+  });
+});
+
+describe("pickWatchProviders", () => {
+  const provider = (id: number, priority: number): WatchProvider => ({
+    provider_id: id,
+    provider_name: `P${id}`,
+    logo_path: null,
+    display_priority: priority,
+  });
+
+  it("groups by kind in display order and sorts by priority", () => {
+    const result = pickWatchProviders(
+      {
+        results: {
+          GB: {
+            link: "https://example/gb",
+            buy: [provider(1, 5)],
+            flatrate: [provider(2, 9), provider(3, 1)],
+          },
+        },
+      },
+      "GB",
+    );
+    expect(result?.link).toBe("https://example/gb");
+    expect(result?.groups.map((g) => g.kind)).toEqual(["flatrate", "buy"]);
+    expect(result?.groups[0].providers.map((p) => p.provider_id)).toEqual([3, 2]);
+  });
+
+  it("returns null when the region has nothing", () => {
+    expect(pickWatchProviders({ results: {} }, "GB")).toBeNull();
+    expect(pickWatchProviders({ results: { GB: { link: "x" } } }, "GB")).toBeNull();
+    expect(pickWatchProviders(undefined, "GB")).toBeNull();
+  });
+});
+
+describe("pickBackdrops", () => {
+  const image = (file_path: string, vote_average: number, vote_count = 1): MovieImage => ({
+    file_path,
+    vote_average,
+    vote_count,
+    width: 1,
+    height: 1,
+    aspect_ratio: 1,
+    iso_639_1: null,
+  });
+
+  it("orders by votes, drops duplicates and limits", () => {
+    const picked = pickBackdrops(
+      {
+        backdrops: [image("/a", 5), image("/b", 7), image("/a", 5), image("/c", 7, 9)],
+        posters: [],
+      },
+      2,
+    );
+    expect(picked.map((i) => i.file_path)).toEqual(["/c", "/b"]);
+    expect(pickBackdrops(undefined)).toEqual([]);
+  });
+});
+
+describe("external links", () => {
+  const ids: ExternalIds = {
+    imdb_id: "tt1",
+    instagram_id: "insta",
+    twitter_id: "tw",
+    facebook_id: null,
+  };
+
+  it("builds movie links with the website first", () => {
+    const links = buildExternalLinks(ids, "https://movie.example");
+    expect(links.map((l) => l.label)).toEqual(["Website", "IMDb", "Instagram", "X"]);
+    expect(links[1].url).toBe("https://www.imdb.com/title/tt1/");
+    expect(buildExternalLinks(undefined)).toEqual([]);
+  });
+
+  it("points a person's IMDb link at /name/", () => {
+    const links = buildPersonLinks({ ...ids, imdb_id: "nm9" });
+    expect(links.find((l) => l.label === "IMDb")?.url).toBe("https://www.imdb.com/name/nm9/");
+  });
+
+  it("knows the public TMDB page", () => {
+    expect(getMovieUrl(42)).toBe("https://www.themoviedb.org/movie/42");
+  });
+});
+
+describe("sortCollectionParts", () => {
+  it("orders by release date with undated parts last", () => {
+    const part = (id: number, release_date: string) => ({ id, release_date }) as Movie;
+    const sorted = sortCollectionParts([part(1, "2010-01-01"), part(2, ""), part(3, "2001-01-01")]);
+    expect(sorted.map((p) => p.id)).toEqual([3, 1, 2]);
+  });
+});
+
+describe("pickImageSize", () => {
+  it("steps down one size when data saver is on", () => {
+    expect(pickImageSize("w500")).toBe("w500");
+    updateSettings({ dataSaver: true });
+    expect(pickImageSize("w500")).toBe("w342");
+    expect(pickImageSize("h632")).toBe("w185");
+    expect(pickImageSize("w92")).toBe("w92");
   });
 });
