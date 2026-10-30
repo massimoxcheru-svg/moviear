@@ -1,8 +1,11 @@
 import { View, Text, Image, TouchableOpacity } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { icons } from "@/constants/icons";
+import { useSavedMovies } from "@/hooks/useSavedMovies";
 
 export default function Profile() {
+  const { count: savedCount } = useSavedMovies();
+
   return (
     <View className="flex-1 bg-primary">
       <SafeAreaView className="flex-1">
@@ -31,7 +34,9 @@ export default function Profile() {
           {/* Stats */}
           <View className="flex-row justify-around mt-8 bg-dark-100 rounded-2xl py-5">
             <View className="items-center">
-              <Text className="text-accent text-2xl font-bold">0</Text>
+              <Text className="text-accent text-2xl font-bold">
+                {savedCount}
+              </Text>
               <Text className="text-light-300 text-sm">Saved</Text>
             </View>
             <View className="w-px bg-dark-200" />
