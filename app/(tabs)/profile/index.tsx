@@ -7,11 +7,17 @@ import { icons } from "@/constants/icons";
 import { useSavedMovies } from "@/hooks/useSavedMovies";
 import { useWatchHistory } from "@/hooks/useWatchHistory";
 import { useSettings } from "@/hooks/useSettings";
+import { useFetch } from "@/hooks/useFetch";
+import { useBackup, type PendingImport } from "@/hooks/useBackup";
 import { clearSavedMovies } from "@/services/savedMovies";
 import { cacheEntryCount, clearCache } from "@/services/cache";
+import { fetchGenres } from "@/services/api";
 import { LANGUAGES, REGIONS, type TrendingWindow } from "@/services/settings";
+import { decadeBreakdown, genreBreakdown, ratingSummary } from "@/utils/stats";
+import { formatDate } from "@/utils/format";
 import OptionPicker, { type Option } from "@/components/OptionPicker";
 import SettingRow from "@/components/SettingRow";
+import StatBar from "@/components/StatBar";
 
 const WINDOW_OPTIONS: readonly Option<TrendingWindow>[] = [
   { value: "day", label: "Today" },
@@ -28,17 +34,19 @@ const LANGUAGE_OPTIONS: readonly Option<string>[] = LANGUAGES.map((l) => ({
   label: l.name,
 }));
 
-function confirm(title: string, message: string, onConfirm: () => void) {
+function confirm(title: string, message: string, onConfirm: () => void, label = "Clear") {
   Alert.alert(title, message, [
     { text: "Cancel", style: "cancel" },
-    { text: "Clear", style: "destructive", onPress: onConfirm },
+    { text: label, style: "destructive", onPress: onConfirm },
   ]);
 }
 
 export default function Profile() {
-  const { count: savedCount } = useSavedMovies();
+  const { movies: savedMovies, count: savedCount } = useSavedMovies();
   const history = useWatchHistory();
   const { settings, update, reset } = useSettings();
+  const genres = useFetch(() => fetchGenres());
+  const backup = useBackup();
   const [cachedEntries, setCachedEntries] = useState<number | null>(null);
 
   const refreshCacheCount = useCallback(() => {
@@ -49,13 +57,52 @@ export default function Profile() {
     refreshCacheCount();
   }, [refreshCacheCount]);
 
+  useEffect(() => {
+    if (backup.error) {
+      Alert.alert("Backup", backup.error, [{ text: "OK", onPress: backup.clearError }]);
+    }
+  }, [backup.error, backup.clearError]);
+
   const onClearCache = () => {
     confirm("Clear cached data", "Lists and details will be downloaded again.", () => {
       clearCache().then(refreshCacheCount);
     });
   };
 
+  const onImport = async () => {
+    const pending: PendingImport | null = await backup.pickBackup();
+    if (!pending) return;
+    const { summary, doc } = pending;
+    const when = summary.exportedAt ? formatDate(summary.exportedAt.slice(0, 10)) : null;
+    Alert.alert(
+      "Restore backup",
+      `${summary.saved} saved, ${summary.history} viewed${when ? `, exported ${when}` : ""}. Merge with what is on this device, or replace it?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Merge",
+          onPress: () => {
+            const result = backup.restore(doc, { mode: "merge", includeSettings: true });
+            Alert.alert("Restored", `${result.saved} saved and ${result.history} viewed movies.`);
+          },
+        },
+        {
+          text: "Replace",
+          style: "destructive",
+          onPress: () => {
+            const result = backup.restore(doc, { mode: "replace", includeSettings: true });
+            Alert.alert("Restored", `${result.saved} saved and ${result.history} viewed movies.`);
+          },
+        },
+      ],
+    );
+  };
+
   const version = Constants.expoConfig?.version ?? "dev";
+  const taste = genreBreakdown(savedMovies, genres.data ?? []);
+  const ratings = ratingSummary(savedMovies);
+  const decades = decadeBreakdown(savedMovies, 3);
+  const regionName = REGIONS.find((r) => r.code === settings.region)?.name ?? settings.region;
 
   return (
     <View className="flex-1 bg-primary">
@@ -91,10 +138,45 @@ export default function Profile() {
             </View>
             <View className="w-px bg-dark-200" />
             <View className="items-center">
+              <Text className="text-accent text-2xl font-bold">{ratings.rated}</Text>
+              <Text className="text-light-300 text-sm">Rated</Text>
+            </View>
+            <View className="w-px bg-dark-200" />
+            <View className="items-center">
               <Text className="text-accent text-2xl font-bold">{history.count}</Text>
               <Text className="text-light-300 text-sm">Viewed</Text>
             </View>
           </View>
+
+          {/* Taste */}
+          {taste.length > 0 || ratings.average !== null ? (
+            <View className="mt-6 bg-dark-100 rounded-2xl p-5">
+              <Text className="text-white text-base font-semibold mb-1">Your taste</Text>
+              <Text className="text-light-300 text-xs mb-4">From the movies in your watchlist</Text>
+              {taste.map((t) => (
+                <StatBar
+                  key={t.genre.id}
+                  label={t.genre.name}
+                  value={`${t.count} ${t.count === 1 ? "movie" : "movies"}`}
+                  share={t.share / (taste[0]?.share || 1)}
+                />
+              ))}
+              {ratings.average !== null ? (
+                <Text className="text-light-200 text-sm mt-2">
+                  You rate on average{" "}
+                  <Text className="text-accent font-semibold">{ratings.average.toFixed(1)} / 10</Text>
+                </Text>
+              ) : null}
+              {decades.length > 0 ? (
+                <Text className="text-light-200 text-sm mt-2">
+                  Mostly from the{" "}
+                  <Text className="text-accent font-semibold">
+                    {decades.map((d) => d.decade).join(", ")}
+                  </Text>
+                </Text>
+              ) : null}
+            </View>
+          ) : null}
 
           {/* Browsing */}
           <Text className="text-light-300 text-sm mt-8 mb-4">Browsing</Text>
@@ -109,7 +191,7 @@ export default function Profile() {
           <View className="bg-dark-100 rounded-xl py-4 px-5 mb-3">
             <Text className="text-white text-base">Region</Text>
             <Text className="text-light-300 text-xs mt-1 mb-3">
-              Used for what is now playing and coming soon near you
+              Now playing, coming soon and where to watch, for {regionName}
             </Text>
             <OptionPicker
               options={REGION_OPTIONS}
@@ -142,6 +224,18 @@ export default function Profile() {
               />
             }
           />
+          <SettingRow
+            label="Data saver"
+            description="Load smaller posters and photos"
+            right={
+              <Switch
+                value={settings.dataSaver}
+                onValueChange={(dataSaver) => update({ dataSaver })}
+                trackColor={{ true: "#AB8BFF", false: "#221F3D" }}
+                thumbColor="#FFFFFF"
+              />
+            }
+          />
 
           {/* Data */}
           <Text className="text-light-300 text-sm mt-6 mb-4">Your data</Text>
@@ -151,11 +245,21 @@ export default function Profile() {
             onPress={() => router.push("/history")}
           />
           <SettingRow
+            label="Export a backup"
+            description="Share a file with your watchlist, history and settings"
+            onPress={backup.busy ? undefined : () => void backup.exportBackup()}
+          />
+          <SettingRow
+            label="Restore a backup"
+            description="Pick a file exported from MovieAr"
+            onPress={backup.busy ? undefined : () => void onImport()}
+          />
+          <SettingRow
             label="Clear watchlist"
             description={`${savedCount} saved`}
             destructive
             onPress={() =>
-              confirm("Clear watchlist", "Remove every saved movie?", clearSavedMovies)
+              confirm("Clear watchlist", "Remove every saved movie, with your ratings and notes?", clearSavedMovies)
             }
           />
           <SettingRow
@@ -175,7 +279,7 @@ export default function Profile() {
           />
           <SettingRow
             label="Reset settings"
-            onPress={() => confirm("Reset settings", "Go back to the defaults?", reset)}
+            onPress={() => confirm("Reset settings", "Go back to the defaults?", reset, "Reset")}
           />
 
           {/* About */}
