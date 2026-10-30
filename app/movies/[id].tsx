@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import {
   View,
   Text,
@@ -5,16 +6,38 @@ import {
   ScrollView,
   TouchableOpacity,
   ActivityIndicator,
+  FlatList,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, router } from "expo-router";
 import * as Haptics from "expo-haptics";
 import { icons } from "@/constants/icons";
-import { fetchMovieDetails, getImageUrl } from "@/services/api";
+import {
+  fetchMovieDetails,
+  fetchRecommendedMovies,
+  getImageUrl,
+  pickDirectors,
+  pickTopCast,
+  pickTrailers,
+} from "@/services/api";
 import { useFetch } from "@/hooks/useFetch";
 import { useSavedMovies } from "@/hooks/useSavedMovies";
+import { useSettings } from "@/hooks/useSettings";
+import { useWatchHistory } from "@/hooks/useWatchHistory";
+import {
+  formatCount,
+  formatDate,
+  formatMoney,
+  formatRating,
+  formatRuntime,
+  formatYear,
+  joinNames,
+} from "@/utils/format";
 import ErrorState from "@/components/ErrorState";
-import { formatRuntime, formatYear } from "@/utils/format";
+import SectionHeader from "@/components/SectionHeader";
+import CastCard from "@/components/CastCard";
+import VideoCard from "@/components/VideoCard";
+import MovieRow from "@/components/MovieRow";
 
 export default function MovieDetails() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -26,8 +49,26 @@ export default function MovieDetails() {
     refetch,
   } = useFetch(() => fetchMovieDetails(id));
 
+  const recommended = useFetch(async () => (await fetchRecommendedMovies(id)).results);
+
   const { isSaved, toggle, hydrated } = useSavedMovies();
+  const { settings } = useSettings();
+  const history = useWatchHistory();
   const saved = movie ? isSaved(movie.id) : false;
+
+  // Record the view once the movie has loaded, if the user allows it.
+  useEffect(() => {
+    if (!movie || !settings.trackHistory) return;
+    history.record({
+      id: movie.id,
+      title: movie.title,
+      poster_path: movie.poster_path,
+      vote_average: movie.vote_average,
+      release_date: movie.release_date,
+    });
+    // Only when a different movie loads; a settings change should not re-record.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [movie?.id]);
 
   const onToggleSaved = () => {
     if (!movie) return;
@@ -45,7 +86,26 @@ export default function MovieDetails() {
   const poster = getImageUrl(movie?.poster_path, "w780");
   const year = formatYear(movie?.release_date);
   const runtime = formatRuntime(movie?.runtime);
-  const rating = movie?.vote_average ? movie.vote_average.toFixed(1) : null;
+  const rating = movie?.vote_average ? formatRating(movie.vote_average) : null;
+  const directors = pickDirectors(movie?.credits?.crew);
+  const cast = pickTopCast(movie?.credits?.cast);
+  const trailers = pickTrailers(movie?.videos?.results);
+  const budget = formatMoney(movie?.budget);
+  const revenue = formatMoney(movie?.revenue);
+  const releaseDate = formatDate(movie?.release_date);
+  const companies = movie?.production_companies.map((c) => c.name) ?? [];
+  const language = movie?.spoken_languages.find(
+    (l) => l.iso_639_1 === movie.original_language,
+  )?.english_name;
+
+  const facts: { label: string; value: string | null }[] = [
+    { label: "Status", value: movie?.status ?? null },
+    { label: "Released", value: releaseDate },
+    { label: "Language", value: language ?? null },
+    { label: "Budget", value: budget },
+    { label: "Box office", value: revenue },
+    { label: "Production", value: companies.length ? joinNames(companies) : null },
+  ];
 
   return (
     <View className="flex-1 bg-primary">
@@ -83,6 +143,8 @@ export default function MovieDetails() {
         <SafeAreaView className="absolute top-0 left-0 right-0">
           <TouchableOpacity
             onPress={() => router.back()}
+            accessibilityRole="button"
+            accessibilityLabel="Go back"
             className="bg-dark-100/80 rounded-full w-10 h-10 items-center justify-center ml-5 mt-2"
           >
             <Image
@@ -127,7 +189,7 @@ export default function MovieDetails() {
                       {rating}
                       <Text className="text-light-300">
                         {" "}
-                        ({movie.vote_count})
+                        ({formatCount(movie.vote_count)})
                       </Text>
                     </Text>
                   </View>
@@ -142,16 +204,32 @@ export default function MovieDetails() {
               {movie.genres.length > 0 ? (
                 <View className="flex-row flex-wrap gap-2 mt-4">
                   {movie.genres.map((genre) => (
-                    <View
+                    <TouchableOpacity
                       key={genre.id}
+                      accessibilityRole="link"
+                      onPress={() =>
+                        router.push({
+                          pathname: "/genres/[id]",
+                          params: { id: String(genre.id), name: genre.name },
+                        })
+                      }
                       className="bg-dark-100 rounded-full px-4 py-2"
                     >
                       <Text className="text-light-200 text-sm">
                         {genre.name}
                       </Text>
-                    </View>
+                    </TouchableOpacity>
                   ))}
                 </View>
+              ) : null}
+
+              {directors.length > 0 ? (
+                <Text className="text-light-300 mt-4">
+                  Directed by{" "}
+                  <Text className="text-light-200 font-semibold">
+                    {joinNames(directors.map((d) => d.name))}
+                  </Text>
+                </Text>
               ) : null}
 
               {/* Overview */}
@@ -197,6 +275,71 @@ export default function MovieDetails() {
                   </Text>
                 </View>
               </TouchableOpacity>
+
+              {/* Cast */}
+              {cast.length > 0 ? (
+                <View className="mt-8">
+                  <SectionHeader title="Top cast" />
+                  <FlatList
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    data={cast}
+                    keyExtractor={(item) => `${item.id}-${item.character}`}
+                    renderItem={({ item }) => <CastCard member={item} />}
+                    ItemSeparatorComponent={() => <View className="w-3" />}
+                  />
+                </View>
+              ) : null}
+
+              {/* Trailers */}
+              {trailers.length > 0 ? (
+                <View className="mt-8">
+                  <SectionHeader title="Trailers" />
+                  <FlatList
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    data={trailers}
+                    keyExtractor={(item) => item.id}
+                    renderItem={({ item }) => <VideoCard video={item} />}
+                    ItemSeparatorComponent={() => <View className="w-4" />}
+                  />
+                </View>
+              ) : null}
+
+              {/* Facts */}
+              <View className="mt-8">
+                <SectionHeader title="Details" />
+                <View className="bg-dark-100 rounded-2xl px-5 py-2">
+                  {facts
+                    .filter((f) => f.value)
+                    .map((f) => (
+                      <View
+                        key={f.label}
+                        className="flex-row justify-between py-3 border-b border-dark-200"
+                      >
+                        <Text className="text-light-300">{f.label}</Text>
+                        <Text
+                          className="text-light-200 font-semibold flex-1 text-right ml-4"
+                          numberOfLines={2}
+                        >
+                          {f.value}
+                        </Text>
+                      </View>
+                    ))}
+                </View>
+              </View>
+
+              {/* Recommendations */}
+              <View className="mt-8">
+                <SectionHeader title="More like this" />
+                <MovieRow
+                  movies={recommended.data ?? []}
+                  loading={recommended.loading}
+                  error={recommended.error}
+                  onRetry={recommended.refetch}
+                  emptyText="No recommendations yet"
+                />
+              </View>
             </>
           )}
         </View>

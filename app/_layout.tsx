@@ -1,12 +1,15 @@
 import { Stack } from "expo-router";
 import "../global.css";
 import "react-native-reanimated";
+
 export default function RootLayout() {
   return (
-    <Stack>
-      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-
-      <Stack.Screen name="movies/[id]" options={{ headerShown: false }} />
+    <Stack screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="(tabs)" />
+      <Stack.Screen name="movies/[id]" />
+      <Stack.Screen name="people/[id]" />
+      <Stack.Screen name="genres/[id]" />
+      <Stack.Screen name="history/index" />
     </Stack>
   );
 }
