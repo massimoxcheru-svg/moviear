@@ -15,14 +15,6 @@ interface Movie {
   vote_count: number;
 }
 
-interface TrendingMovie {
-  searchTerm: string;
-  movie_id: number;
-  title: string;
-  count: number;
-  poster_url: string;
-}
-
 interface MovieDetails {
   adult: boolean;
   backdrop_path: string | null;
@@ -71,7 +63,29 @@ interface MovieDetails {
   vote_count: number;
 }
 
-interface TrendingCardProps {
-  movie: TrendingMovie;
-  index: number;
+/** Shape of TMDB list endpoints (trending, search, now_playing, ...). */
+interface TMDBPaginatedResponse<T> {
+  page: number;
+  results: T[];
+  total_pages: number;
+  total_results: number;
+}
+
+/** The minimum a MovieCard needs. Movie, MovieDetails and SavedMovie all satisfy it. */
+interface MovieCardMovie {
+  id: number;
+  title: string;
+  poster_path: string | null;
+  vote_average: number;
+  release_date: string;
+}
+
+interface MovieCardProps {
+  movie: MovieCardMovie;
+}
+
+/** A watchlist entry persisted on the device. */
+interface SavedMovie extends MovieCardMovie {
+  /** Unix ms timestamp; used to sort newest-saved first. */
+  saved_at: number;
 }
